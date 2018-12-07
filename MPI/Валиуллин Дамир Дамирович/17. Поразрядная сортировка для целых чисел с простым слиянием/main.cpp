@@ -107,7 +107,7 @@ int main() {
 	MPI_Comm_rank(MPI_COMM_WORLD, &procRank);
 
 	int ROOT = 0;
-	const int size = 10000000;
+	const int size = 50000000;
 	uint* mas = nullptr;
 	uint* tmas = nullptr;
 	double gltime;
@@ -187,7 +187,7 @@ int main() {
 		std::cout << "Starting std::sort..." << std::endl;
 		time = MPI_Wtime();
 		sort(tmas, size);
-		std::sort(tmas, tmas + size);
+		//std::sort(tmas, tmas + size);
 		time = MPI_Wtime() - time;
 		std::cout << "Sort on the " <<1<<" process: "<< time << " sec" << std::endl;
 		std::cout << "Sort on the "<< procSize << " process: " << gltime << " sec" << std::endl;
