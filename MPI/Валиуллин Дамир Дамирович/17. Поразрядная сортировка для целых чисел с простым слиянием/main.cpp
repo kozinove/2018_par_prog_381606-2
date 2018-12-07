@@ -61,11 +61,38 @@ void sort(uint* mas, uint* tempMas, int length) {
 
 bool sravn(uint* mas, uint* tmas, int size) {
 	for (int i = 0; i < size; i++) {
+		std::cout << "IM HERE" << std::endl;
 		if (mas[i] != tmas[i]) {
 			return false;
 		}
 	}
 	return true;
+}
+
+void bond(uint* mas1, int size1, uint* mas2, int size2, uint* result){
+	int i = 0, j = 0, k = 0;
+	while (i < size1 && j < size2) {
+		
+		if (mas1[i] < mas2[j]) {
+			result[k] = mas1[i]; i++;
+		}
+		else { 
+			result[k] = mas2[j];
+			j++;
+		} 
+		k++;
+	}
+
+	while (i < size1) {
+		result[k] = mas1[i];
+		k++; i++;
+	} 
+
+	while (j < size2) {
+		result[k] = mas2[j];
+		k++;
+		j++; 
+	} 
 }
 
 void main() {
@@ -79,11 +106,13 @@ void main() {
 	int ROOT = 0;
 	const int size = 100000;
 	uint* mas = nullptr;
-
+	uint * tmas = nullptr;
 	if (procRank == ROOT) {
 		 mas = new uint[size];
-		 createMas(mas, size);
-
+		 //createMas(mas, size);
+		 uint* tmas = new uint[size];
+		 createMas(mas, tmas, size);
+		 std::sort(tmas, tmas + size);
 		/* проверка поразрядной сортировки
 
 		
@@ -119,73 +148,63 @@ void main() {
 		dis[i] = procRank * size / procSize + size % procSize;
 	}
 
-	uint* tempMas1 = new uint[scounts[procRank]];
-	uint* tempMas2 =  new uint[scounts[procRank]];
+	uint* result = new uint[scounts[procRank]];
+	uint* tempMas =  new uint[scounts[procRank]];
 	
-	MPI_Scatterv(mas, scounts,dis, MPI_UNSIGNED, tempMas1, scounts[procRank], MPI_UNSIGNED, ROOT, MPI_COMM_WORLD);
+	MPI_Scatterv(mas, scounts,dis, MPI_UNSIGNED, result, scounts[procRank], MPI_UNSIGNED, ROOT, MPI_COMM_WORLD);
 
 	double time = MPI_Wtime();
-	sort(tempMas1, tempMas2, scounts[procRank]);
+	sort(result, tempMas, scounts[procRank]);
 	time = MPI_Wtime() - time;
-	std::cout << time << std::endl;
+	std::cout << "rank: " << procRank << " " << time << std::endl;
 
-	if (procRank % 2 != 0) {
-		MPI_Send(tempMas1, scounts[procRank], MPI_UNSIGNED, procRank - 1,0,MPI_COMM_WORLD);
-	}
-	else {
-		
-	}
 	
 	int n = procSize;
-	/*while (n > 1)
+	int m = 1;
 
-	{
-
+	while (n > 1){
 		n = n / 2 + n % 2;
 
-		if ((procID - m) % (2 * m) == 0)
+		if ((procRank - m) % (2 * m) == 0){
 
-		{
+			MPI_Send(&scounts[procRank], 1, MPI_UNSIGNED, procRank - m, 0, MPI_COMM_WORLD);
 
-			MPI_Send(&k, 1, MPI_INT, procID - m, 0, MPI_COMM_WORLD);
+			std::cout << "rank: " << procRank << " sending " << scounts[procRank] << " elements" << std::endl;
 
-			MPI_Send(x, k, MPI_DOUBLE, procID - m, 0, MPI_COMM_WORLD);
-
+			MPI_Send(result, scounts[procRank], MPI_UNSIGNED, procRank - m, 0, MPI_COMM_WORLD);
+			MPI_Finalize();
+			return;
 		}
-
-		if ((procID % (2 * m) == 0) && (ProcSize - procID > m))
-
-		{
-
+		if ((procRank % (2 * m) == 0) && (procSize - procRank > m)){
 			MPI_Status status;
+			int length;
 
-			int k1;
+			MPI_Recv(&length, 1, MPI_UNSIGNED, procRank + m, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+		
+			uint *y = new uint[length];
+			std::cout << "rank: " << procRank << " getting " << scounts[procRank + m] << " elements" << std::endl;
+			MPI_Recv(y, length, MPI_UNSIGNED, procRank + m, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
-			MPI_Recv(&k1, 1, MPI_INT, procID + m, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+			uint* tempMas3 = new uint[length + scounts[procRank]];
+			bond(result, scounts[procRank] , y, length, tempMas3);
 
-			double *y = new double[k + k1];
-
-			MPI_Recv(y, k1, MPI_DOUBLE, procID + m, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-
-			for (int i = 0; i < k; i++)
-
-				y[i + k1] = x[i];
-
-			bond(y, 0, k1 - 1, k + k1 - 1);
-
-			x = new double[k1 + k];
-
-			for (int i = 0; i < k + k1; i++)
-
-				x[i] = y[i];
-
-			k = k + k1;
-
+			result = new uint[length + scounts[procRank]];
+			for (int i = 0; i < length + scounts[procRank]; i++) {
+				result[i] = tempMas3[i];
+			}
+					
+			scounts[procRank] += length;
+			std::cout << "rank: " << procRank << " size: " << scounts[procRank] << std::endl;
 		}
+		m *= 2;
+	}
 
-		m = 2 * m;
 
-	}*/
+
+	if (procRank == ROOT) {
+		std::cout << sravn(result, tmas, size) << std::endl;
+		std::cout << scounts[0] << std::endl;
+	}
 
 	MPI_Finalize();
 }
