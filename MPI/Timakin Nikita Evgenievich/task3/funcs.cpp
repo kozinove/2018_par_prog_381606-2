@@ -36,7 +36,7 @@ void sobel_filter(Mat *source)
 }
 
 
-void scatter_image(Mat source, Mat *recv_buffer, int *recvcount, int root, MPI_Comm comm, int rank, int proc_count)
+void scatter_image(Mat source, Mat *recv_buffer, int *recvcount, int *old_recvcount, int root, MPI_Comm comm, int rank, int proc_count)
 {
 	int cols = recv_buffer->cols;
 	uchar *b_img_part_arr = new uchar[recvcount[rank]], *g_img_part_arr = new uchar[recvcount[rank]], *r_img_part_arr = new uchar[recvcount[rank]];
@@ -60,7 +60,8 @@ void scatter_image(Mat source, Mat *recv_buffer, int *recvcount, int root, MPI_C
 		{
 			displs[i] = 0;
 			for (j = 0; j < i; j++)
-				displs[i] += recvcount[j];
+				displs[i] += old_recvcount[j];
+			if (i) displs[i] -= 2 * cols;
 		}
 	}
 
@@ -71,50 +72,62 @@ void scatter_image(Mat source, Mat *recv_buffer, int *recvcount, int root, MPI_C
 	for (i = 0; i < recvcount[rank] / cols; i++)
 		for (j = 0; j < cols; j++)
 			recv_buffer->at<Vec3b>(i, j) = Vec3b(b_img_part_arr[i*cols + j], g_img_part_arr[i*cols + j], r_img_part_arr[i*cols + j]);
-
+	
 	delete[] displs, b_img_part_arr, g_img_part_arr, r_img_part_arr, b_img_arr, g_img_arr, r_img_arr;
 }
 
 
-void gather_image(Mat *result_img, Mat image_part, int *recvcount, int root, MPI_Comm comm, int rank, int proc_count)
+void gather_image(Mat *result_img, Mat image_part, int *old_recvcount, int root, MPI_Comm comm, int rank, int proc_count)
 {
 	int cols = image_part.cols;
-	uchar *b_img_part_arr = new uchar[recvcount[rank]], *g_img_part_arr = new uchar[recvcount[rank]], *r_img_part_arr = new uchar[recvcount[rank]];
+	uchar *b_img_part_arr = nullptr, *g_img_part_arr = nullptr, *r_img_part_arr = nullptr;
 	uchar *b_res_arr = nullptr, *g_res_arr = nullptr, *r_res_arr = nullptr;
-	int *displs = nullptr, i, j;
+	int *displs = nullptr, i, j, recv_elements_count;
 
-	for (i = 0; i < recvcount[rank] / cols; i++)
+	if (rank == root) recv_elements_count = (old_recvcount[0] / cols - 1) * cols;
+	else if (rank == proc_count - 1) recv_elements_count = (old_recvcount[proc_count - 1] / cols + 1) * cols;
+	else recv_elements_count = old_recvcount[rank];
+
+	b_img_part_arr = new uchar[recv_elements_count];
+	g_img_part_arr = new uchar[recv_elements_count];
+	r_img_part_arr = new uchar[recv_elements_count];
+
+	int add = (rank == 0) ? 0 : 1;
+	for (i = 0; i < recv_elements_count / cols; i++)
 		for (j = 0; j < cols; j++)
 		{
-			b_img_part_arr[i * cols + j] = image_part.at<Vec3b>(i, j)[0];
-			g_img_part_arr[i * cols + j] = image_part.at<Vec3b>(i, j)[1];
-			r_img_part_arr[i * cols + j] = image_part.at<Vec3b>(i, j)[2];
+			b_img_part_arr[i * cols + j] = image_part.at<Vec3b>(i + add, j)[0];
+			g_img_part_arr[i * cols + j] = image_part.at<Vec3b>(i + add, j)[1];
+			r_img_part_arr[i * cols + j] = image_part.at<Vec3b>(i + add, j)[2];
 		}
+
+	int *new_recvcount = new int[proc_count];
+	new_recvcount[0] = (old_recvcount[0] / cols - 1) * cols;
+	new_recvcount[proc_count - 1] = (old_recvcount[proc_count - 1] / cols + 1) * cols;
+	for (int i = 1; i < proc_count - 1; i++)
+		new_recvcount[i] = old_recvcount[i];
 
 	if (rank == root)
 	{
 		b_res_arr = new uchar[result_img->rows * cols];
 		g_res_arr = new uchar[result_img->rows * cols];
 		r_res_arr = new uchar[result_img->rows * cols];
+
+		int size1 = result_img->rows / proc_count, rem1 = (result_img->rows % proc_count);
 		displs = new int[proc_count];
-		for (i = 0; i < proc_count; i++)
-		{
-			displs[i] = 0;
-			for (j = 0; j < i; j++)
-				displs[i] += recvcount[j];
-		}
+		displs[0] = 0;
+		for (i = 1; i < proc_count; i++)
+			displs[i] = (i * size1 + rem1 - 1) * cols;
 	}
 
-	MPI_Gatherv(b_img_part_arr, recvcount[rank], MPI_UNSIGNED_CHAR, b_res_arr, recvcount, displs, MPI_UNSIGNED_CHAR, root, comm);
-	MPI_Gatherv(g_img_part_arr, recvcount[rank], MPI_UNSIGNED_CHAR, g_res_arr, recvcount, displs, MPI_UNSIGNED_CHAR, root, comm);
-	MPI_Gatherv(r_img_part_arr, recvcount[rank], MPI_UNSIGNED_CHAR, r_res_arr, recvcount, displs, MPI_UNSIGNED_CHAR, root, comm);
-
+	MPI_Gatherv(b_img_part_arr, recv_elements_count, MPI_UNSIGNED_CHAR, b_res_arr, new_recvcount, displs, MPI_UNSIGNED_CHAR, root, comm);
+	MPI_Gatherv(g_img_part_arr, recv_elements_count, MPI_UNSIGNED_CHAR, g_res_arr, new_recvcount, displs, MPI_UNSIGNED_CHAR, root, comm);
+	MPI_Gatherv(r_img_part_arr, recv_elements_count, MPI_UNSIGNED_CHAR, r_res_arr, new_recvcount, displs, MPI_UNSIGNED_CHAR, root, comm);
+	
 	if (rank == root)
-	{
 		for (i = 0; i < result_img->rows; i++)
 			for (j = 0; j < cols; j++)
 				result_img->at<Vec3b>(i, j) = Vec3b(b_res_arr[i*cols + j], g_res_arr[i*cols + j], r_res_arr[i*cols + j]);
-	}
 
 	delete[] displs, b_img_part_arr, g_img_part_arr, r_img_part_arr, b_res_arr, g_res_arr, r_res_arr;
 }
@@ -129,4 +142,3 @@ string find_name(string name)
 		result += name[i];
 	return result;
 }
-
