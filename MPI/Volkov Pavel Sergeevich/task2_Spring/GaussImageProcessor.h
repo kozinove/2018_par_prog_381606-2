@@ -46,7 +46,7 @@ class ImageProcessorPart : public tbb::task
         vector<vector<double>> core;
 
     public:
-        ImageProcessorPart(Mat _orIm, Mat _outIm, int _begin, int _end, vector<vector<double>>& _core);
+        ImageProcessorPart(Mat& _orIm, Mat& _outIm, int _begin, int _end, vector<vector<double>>& _core);
     
     tbb::task* execute();
 };

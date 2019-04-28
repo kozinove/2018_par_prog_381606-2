@@ -16,7 +16,7 @@ GaussImageProcessor::GaussImageProcessor(Mat& _originalImage, int _chunk)
         if (_chunk > 0)
             chunk = _chunk;
         else chunk = -1;
-        imshow( "GaussImageProcessor_or", originalImage);
+        //imshow( "GaussImageProcessor_or", originalImage);
         core = generate_core(3, 1);
 }
 
@@ -57,31 +57,33 @@ void GaussImageProcessor::partition()
             {
                 ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, i * chunk, i * chunk + chunk, core);
                 tasks.push_back(ip);
-                std::cout << "create part [" << i * chunk << "; " << i * chunk + chunk <<  ")" << "\n";
+                //std::cout << "create part [" << i * chunk << "; " << i * chunk + chunk <<  ")" << "\n";
             }
             
+            cout << "chun count " << chunk_count << "\n";
             ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, rows - (rows % chunk), rows, core);
             tasks.push_back(ip);
-            std::cout << "create part [" << rows - (rows % chunk) << "; " << rows <<  ")" << "\n";
+            //std::cout << "create part [" << rows - (rows % chunk) << "; " << rows <<  ")" << "\n";
         }
         else
         {
-            std::cout << "Num of thread by default = " << thread_num << "\n";
+            //std::cout << "Num of thread by default = " << thread_num << "\n";
             int standart_pack = rows / thread_num;
             for (int i = 0; i < thread_num - 1; i++)
             {
                 ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, i * standart_pack, i * standart_pack + standart_pack, core);
                 tasks.push_back(ip);
-                std::cout << "create part [" << i * standart_pack << "; " << i * standart_pack + standart_pack <<  ")" << "\n";
+                //std::cout << "create part [" << i * standart_pack << "; " << i * standart_pack + standart_pack <<  ")" << "\n";
             }
             ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, standart_pack * (thread_num - 1), rows, core);
             tasks.push_back(ip);
-            std::cout << "create part [" << standart_pack * (thread_num - 1) << "; " << rows <<  ")" << "\n";
+            //std::cout << "create part [" << standart_pack * (thread_num - 1) << "; " << rows <<  ")" << "\n";
         }
+        
 }
 
 
-ImageProcessorPart::ImageProcessorPart(Mat _orIm, Mat _outIm, int _begin, int _end, vector<vector<double>>& _core)
+ImageProcessorPart::ImageProcessorPart(Mat& _orIm, Mat& _outIm, int _begin, int _end, vector<vector<double>>& _core)
 {
     originalImage = _orIm;
     outImage = _outIm;
@@ -93,7 +95,7 @@ ImageProcessorPart::ImageProcessorPart(Mat _orIm, Mat _outIm, int _begin, int _e
 tbb::task* ImageProcessorPart::execute()
 {
     gauss_processing(originalImage, outImage, core, begin, end);
-    std::cout << "Task #? = [" << begin << "; " << end << ")" << " was execute" << "\n";
+    //std::cout << "Task #? = [" << begin << "; " << end << ")" << " was execute" << "\n";
     return NULL;
 }
 
