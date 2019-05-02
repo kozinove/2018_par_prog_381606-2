@@ -7,15 +7,13 @@
 #include "opencv2/opencv.hpp"
 #include <vector>
 #include <string>
+#include <omp.h>
 
 using namespace cv;
 
-GaussImageProcessor::GaussImageProcessor(Mat& _originalImage, int _chunk)
+GaussImageProcessor::GaussImageProcessor(Mat& _originalImage)
 {
         originalImage = _originalImage;
-        if (_chunk > 0)
-            chunk = _chunk;
-        else chunk = -1;
         //imshow( "GaussImageProcessor_or", originalImage);
         core = generate_core(3, 1);
 }
@@ -24,12 +22,13 @@ Mat GaussImageProcessor::execute_gauss()
 {
     outImage = originalImage.clone();
 
-        partition();
+	cout << "image cloned\n";
 
-        tbb::task::spawn_root_and_wait(tasks);
+	gauss_processing(originalImage, outImage, core, 0, originalImage.rows);
 
-        return outImage;
+    return outImage;
 }
+
 
 
 void GaussImageProcessor::set_core(int size, double sigma)
@@ -38,65 +37,6 @@ void GaussImageProcessor::set_core(int size, double sigma)
         throw std::string("negative core size!");
 
     core = generate_core(size, sigma);
-}
-
-void GaussImageProcessor::partition()
-{
-    int rows;
-        int cols;
-
-        rows = originalImage.rows;
-        cols = originalImage.cols;
-
-        int thread_num = tbb::task_scheduler_init::default_num_threads();
-
-        if (chunk > 0)
-        {
-            int chunk_count = rows / chunk;
-            for (int i = 0; i < chunk_count; i++)
-            {
-                ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, i * chunk, i * chunk + chunk, core);
-                tasks.push_back(ip);
-                //std::cout << "create part [" << i * chunk << "; " << i * chunk + chunk <<  ")" << "\n";
-            }
-            
-            cout << "chun count " << chunk_count << "\n";
-            ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, rows - (rows % chunk), rows, core);
-            tasks.push_back(ip);
-            //std::cout << "create part [" << rows - (rows % chunk) << "; " << rows <<  ")" << "\n";
-        }
-        else
-        {
-            //std::cout << "Num of thread by default = " << thread_num << "\n";
-            int standart_pack = rows / thread_num;
-            for (int i = 0; i < thread_num - 1; i++)
-            {
-                ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, i * standart_pack, i * standart_pack + standart_pack, core);
-                tasks.push_back(ip);
-                //std::cout << "create part [" << i * standart_pack << "; " << i * standart_pack + standart_pack <<  ")" << "\n";
-            }
-            ImageProcessorPart& ip = *new (tbb::task::allocate_root()) ImageProcessorPart(originalImage, outImage, standart_pack * (thread_num - 1), rows, core);
-            tasks.push_back(ip);
-            //std::cout << "create part [" << standart_pack * (thread_num - 1) << "; " << rows <<  ")" << "\n";
-        }
-        
-}
-
-
-ImageProcessorPart::ImageProcessorPart(Mat& _orIm, Mat& _outIm, int _begin, int _end, vector<vector<double>>& _core)
-{
-    originalImage = _orIm;
-    outImage = _outIm;
-    begin = _begin;
-    end = _end;
-    core = _core;
-}
-
-tbb::task* ImageProcessorPart::execute()
-{
-    gauss_processing(originalImage, outImage, core, begin, end);
-    //std::cout << "Task #? = [" << begin << "; " << end << ")" << " was execute" << "\n";
-    return NULL;
 }
 
 int clamp(int min, int max, int val)
@@ -147,13 +87,43 @@ vector<vector<double>> generate_core(int wd, double _sigma)
 
 void gauss_processing(Mat& originalImage, Mat& outImage, vector<vector<double>> _core, int begin, int end)
 {
-    vector<vector<double>> core;
+    vector<vector<double>> core;// = { {1,2,1}, {2,4,2}, {1,2,1} };
+
 	core = _core;
 
-    for (int i = begin; i < end; i++)
+	outImage = originalImage.clone();
+
+	#pragma omp parallel shared(originalImage, outImage)
+	{
+
+		int thread_nums = omp_get_num_threads();
+
+		int start_pos;
+		int end_pos;
+
+		int my_id = omp_get_thread_num();
+		int standart_block;
+
+		standart_block = originalImage.rows / thread_nums;
+
+
+		// Find the barrier of img parts
+		if (my_id < thread_nums - 1)
+		{
+			start_pos = standart_block * my_id;
+			end_pos = start_pos + standart_block;
+		}
+		else
+		{
+			start_pos = standart_block * (thread_nums - 1);
+			end_pos = originalImage.rows;
+		}
+
+		for (int i = start_pos; i < end_pos; i++)
 			for (int j = 0; j < originalImage.cols; j++) // For all pixel
 			{
 				double r = 0, g = 0, b = 0;
+				//r = src_img.at<Vec3b>(i, j)[0];
 
 				for (int row = 0; row < core.size(); row++)
 					for (int col = 0; col < core.size(); col++)
@@ -176,9 +146,13 @@ void gauss_processing(Mat& originalImage, Mat& outImage, vector<vector<double>> 
 				outImage.at<Vec3b>(i, j)[2] = r;
 				outImage.at<Vec3b>(i, j)[1] = g;
 				outImage.at<Vec3b>(i, j)[0] = b;
-			}
-}
 
+			}
+
+		if (my_id == thread_nums - 1) cout << "Gauss called on " << my_id + 1 << " threads\n";
+	}
+
+}
 
 bool check(Mat im1, Mat im2)
 {

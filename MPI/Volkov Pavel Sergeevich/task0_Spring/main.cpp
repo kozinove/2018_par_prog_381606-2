@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include <opencv2/opencv.hpp>
-#include <omp.h>
 #include <vector>
 #include <time.h>
 #include "GaussImageProcessor.h"
@@ -26,10 +25,7 @@ int main(int argc, char *argv[])
     }
 
 	//init parralel
-	if (thread_num != -1)
-	{
-		omp_set_num_threads(thread_num);
-	}
+    // Olways 1
 
     //execute process
     GaussImageProcessor g(srcImg);
